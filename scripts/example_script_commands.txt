@@ -1,0 +1,1 @@
+./sfm_main.sh "/media/aadityacr7/My Passport1/argoverse_data/argoverse-tracking/train1/8a15674a-ae5c-38e2-bc4b-f4156d384072" stereo sift 
