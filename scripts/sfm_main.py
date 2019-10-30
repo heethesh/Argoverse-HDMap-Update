@@ -114,15 +114,31 @@ class CVUtils():
         
         return [kp, des]
 
+    '''
+    mask is (h, w) binary ndarray with ones where we want to keep feature points
+    kp is (N, 2) ndarray
+    '''   
+    # Mask Pixel coordinates (to remove dynamic objects)
+    def maskPixels(pts, mask):
+         # Create a selection mask for all the keypoints to be kept where mask is 1.
+        if mask is not None: select_mask = (mask[pts[:, 0], pts[:, 1]] == 1)
+        else: select_mask = np.ones(len(pts))
+        pts = pts[select_mask]
+        return pts
+       
     # Find the matches between two images 
-    def featureMatching(self, img1, img2, descriptorType, topNMatches, displayMatches= False, displayKp= False):
-
+    def featureMatching(self, img1, img2, descriptorType, topNMatches, mask1=None, mask2=None, displayMatches=False, displayKp=False):
         # Find features and descriptors from given images 
         [kp1, des1] = self.featureDetection(img1, descriptorType, displayKp)
         [kp2, des2] = self.featureDetection(img2, descriptorType, displayKp)
 
-        print (len(kp1))
-        input("Press Enter to continue: ")
+        # Find pixel correspondences as per matches 
+        pts1 = np.asarray([kp1[m.queryIdx].pt for m in matches])
+        pts2 = np.asarray([kp2[m.trainIdx].pt for m in matches])
+        
+        #Mask feature points (for dynamic object removal)
+        pts1Masked= maskPixels(pts1, mask1)
+        pts2Masked= maskPixels(pts2, mask2)
 
         if descriptorType == "sift" or descriptorType == "surf":
             matchCriteria = cv2.NORM_L2
@@ -150,7 +166,8 @@ class CVUtils():
             print ("Drawing all matches")
             img3=  cv2.drawMatches(img1,kp1,img2,kp2, matches, None, flags=2)
             plt.imshow(img3), plt.title(descriptorType), plt.show()
-        return matches 
+        
+        return [pts1Masked, pts2Masked, matches]
 
 def main():
       
@@ -204,6 +221,9 @@ def main():
         stereoFlCalib= utils.readJsonFile(calibConfFilePath)['camera_data_'][6]
 
         print (stereoFrCalib)
+        print (stereoFlCalib)
+
+        input("Press Enter to continue")
         #stereoFlCalib= camData['image_raw_stereo_front_right']
 
 
@@ -213,10 +233,64 @@ def main():
     imgL = cvUtils.readImage(stereoFlImgPaths[0])
     
     # Extract matches from the first two images from the stereo folder 
-    matches= cvUtils.featureMatching(imgR, imgL, descriptorType, topNMatches, displayMatches=True, displayKp=False)
+    [pts1, pts2, matches]= cvUtils.featureMatching(imgR, imgL, descriptorType, topNMatches, displayMatches=True, displayKp=False)
+
+    # Create a vector of ones 
+    onesVec= np.ones(len(matches))
+    onesVec= np.reshape(onesVec, (onesVec.shape[0],1))
+
+    # Create a set of homogenous points 
+    pts1Homo= np.hstack((pts1, onesVec))
+    pts2Homo= np.hstack((pts2, onesVec))
+
+    # Compute camera projection matrices
+    # To Do: This code needs K1, K2, R,t from the 
+    M1 = np.hstack((np.eye(3, 3), np.zeros((3, 1))))
+    M2 = np.hstack((R, t))
+    C1  = K1 @ M1
+    C2 =  K2 @ M2
+    # 3D point in homogenous form ([x,y,z,w])
+    point3dHomo = cv2.triangulatePoints(C1, C2, pts1.T, pts2.T).T
+    # 3D point after normalizing by w aka ([x/w, y/w, z/w, 1])
+    point3d = point3dHomo / point3dHomo[:, -1].reshape(-1,1)
 
 
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    ax.set_aspect('equal')
 
+    X = point_3d[:,0]
+    Y = point_3d[:,1] 
+    Z = point_3d[:,2]
+    max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+
+    mid_x = (X.max()+X.min()) * 0.5
+    mid_y = (Y.max()+Y.min()) * 0.5
+    mid_z = (Z.max()+Z.min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    # For each set of style and range settings, plot n random points in the box
+
+    ax.scatter(X, Y, Z, s= 2)
+
+    '''
+    max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+
+    mid_x = (X.max()+X.min()) * 0.5
+    mid_y = (Y.max()+Y.min()) * 0.5
+    mid_z = (Z.max()+Z.min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+    '''
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show()
 
 
   
