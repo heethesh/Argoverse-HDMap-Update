@@ -9,6 +9,8 @@
         type="play"
         name="player"
         output="screen"
-        args="--clock --quiet --rate=1 $(arg filename)" />
+        args="--clock --quiet --rate=1 --delay=5 $(arg filename)" />
+
+    <param name ="/use_sim_time" value="true" />
 
 </launch>

@@ -12,7 +12,6 @@
         <param name="trajectory_update_rate" type="double" value="4" />
         <param name="trajectory_publish_rate" type="double" value="0.25" />
     </node>
-    
 
     <!-- Launch Rviz -->
     <node
