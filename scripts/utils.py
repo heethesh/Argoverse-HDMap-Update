@@ -15,11 +15,13 @@ from __future__ import print_function, absolute_import, division
 from import_cv2 import *
 
 # External modules
+import open3d
 import numpy as np
 from pathlib import Path
 
 # ROS modules
 import rospy
+import ros_numpy
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_msgs.msg import TFMessage
 from sensor_msgs import point_cloud2
@@ -44,25 +46,46 @@ def make_image_message(img, header, coding='bgr8'):
     return msg
 
 
-def make_pointcloud_message(header, plydata):
+def make_pointcloud_message_ply(header, plydata):
     # Extract data from plydata
     x = plydata['vertex']['x']
     y = plydata['vertex']['y']
     z = plydata['vertex']['z']
-    intensity = plydata['vertex']['intensity']
-    laser_number = plydata['vertex']['laser_number']
 
     # Prepare point cloud data
-    points = list(zip(x, y, z, intensity, laser_number))
+    points = list(zip(x, y, z))
     fields = [PointField('x', 0, PointField.FLOAT32, 1),
               PointField('y', 4, PointField.FLOAT32, 1),
-              PointField('z', 8, PointField.FLOAT32, 1),
-              PointField('intensity', 12, PointField.UINT8, 1),
-              PointField('laser_number', 13, PointField.UINT16, 1)]
+              PointField('z', 8, PointField.FLOAT32, 1)]
 
     # Create point cloud message
     msg = point_cloud2.create_cloud(header, fields, points)
     return msg
+
+
+def make_pointcloud_message_numpy(header, array):
+    # Create point cloud message
+    return point_cloud2.create_cloud_xyz32(header, array)
+
+
+def open3d_to_numpy(pcd):
+    return np.asarray(pcd.points)
+
+
+def numpy_to_open3d(array):
+    pcd = open3d.geometry.PointCloud()
+    pcd.points = open3d.utility.Vector3dVector(array)
+    return pcd
+
+
+def pointcloud_message_to_numpy(msg):
+    return ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
+
+
+def pointcloud_message_to_open3d(msg):
+    array = pointcloud_message_to_numpy(msg)
+    pcd = numpy_to_open3d(array)
+    return pcd
 
 
 def make_vector3_message(vector):
