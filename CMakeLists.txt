@@ -144,6 +144,9 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/argoverse_hdmap_updator_node.cpp)
 add_executable(cloud_proc src/cloud_proc.cpp)
+#add_executable(fpfh_trial src/fpfh_trial.cpp)
+#add_executable(fpfh_2 src/fpfh_2.cpp)
+add_executable(fpfh_with_ransac src/fpfh_with_ransac.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -160,6 +163,10 @@ add_executable(cloud_proc src/cloud_proc.cpp)
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(cloud_proc ${catkin_LIBRARIES})
+#target_link_libraries(fpfh_trial ${catkin_LIBRARIES})
+#target_link_libraries(fpfh_2 ${catkin_LIBRARIES})
+target_link_libraries(fpfh_with_ransac ${catkin_LIBRARIES})
+
 
 #############
 ## Install ##

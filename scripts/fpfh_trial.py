@@ -13,16 +13,16 @@ def preprocess_point_cloud(pcd, voxel_size):
     print(":: Downsample with a voxel size %.3f." % voxel_size)
     pcd_down = pcd.voxel_down_sample(voxel_size)
 
-    radius_normal = voxel_size * 2
+    radius_normal = voxel_size * 4
     print(":: Estimate normal with search radius %.3f." % radius_normal)
     pcd_down.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn= 100))
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn= 30))
 
-    radius_feature = voxel_size * 5
+    radius_feature = voxel_size * 10
     print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
     pcd_fpfh = o3d.registration.compute_fpfh_feature(
         pcd_down,
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn= 120))
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn= 30))
     return pcd_down, pcd_fpfh
 
 def execute_global_registration(source_down, target_down, source_fpfh,
@@ -113,10 +113,14 @@ if __name__ == "__main__":
     
  
     #Loading two point clouds 
-    small_cuboid = o3d.io.read_point_cloud("/home/aadityacr7/geometry_ws/src/argoverse_hdmap_updator/scripts/scan_000.pcd")
-    large_cuboid = o3d.io.read_point_cloud("/home/aadityacr7/geometry_ws/src/argoverse_hdmap_updator/scripts/scan_010.pcd")
+    small_cuboid = o3d.io.read_point_cloud("/home/aadityacr7/geometry_ws/src/argoverse_hdmap_updator/scripts/dso.pcd")
+    large_cuboid = o3d.io.read_point_cloud("/home/aadityacr7/geometry_ws/src/argoverse_hdmap_updator/scripts/lidar.pcd")
     # Downsample two clouds 
     voxel_size = 0.5  # means 5cm for the dataset
+
+    # Scaling the point cloud 
+    # small_cuboid.scale(15)
+
     # Downsample clouds, estimate normals, fpfh features 
     [small_down, small_fpfh]= preprocess_point_cloud(small_cuboid, voxel_size)
     [large_down, large_fpfh] = preprocess_point_cloud(large_cuboid, voxel_size)
@@ -129,18 +133,18 @@ if __name__ == "__main__":
     print ("Fitness: ", fitness)
     print ("Inlier RMSE: ", inlier_rmse)
 
-    #draw_registration_result(small_down, large_down, result.transformation)
+    draw_registration_result(small_down, large_down, result.transformation)
 
-    # Extract indices for all the correspondences 
-    correspondences_indices = np.asarray(result.correspondence_set)
-    print (correspondences_indices.shape[0])
-    print (num_points(small_down) )
+    # # Extract indices for all the correspondences 
+    # correspondences_indices = np.asarray(result.correspondence_set)
+    # print (correspondences_indices.shape[0])
+    # print (num_points(small_down) )
 
-    pause_till_enter()
-    # Sort according to top n correspondences
-    num_top_correspondences = int(np.floor(0.1* correspondences_indices.shape[0]))
+    # pause_till_enter()
+    # # Sort according to top n correspondences
+    # num_top_correspondences = int(np.floor( correspondences_indices.shape[0]))
     # Get 3D points for top N correspondences 
-    [points1_corresp, points2_corresp]= get_3d_correspondences(small_down, large_down, correspondences_indices, num_top_correspondences)
+    #[points1_corresp, points2_corresp]= get_3d_correspondences(small_down, large_down, correspondences_indices, num_top_correspondences)
     
-    draw_correspondences(points1_corresp, small_down)
+    #draw_correspondences(points1_corresp, small_down)
 
