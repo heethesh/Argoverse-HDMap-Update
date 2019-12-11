@@ -8,21 +8,6 @@ from scipy import stats
 import utils_o3d as utils
 
 
-def execute_global_registration(source_down, target_down, 
-                                source_fpfh, target_fpfh, 
-                                distance_threshold, num_iters, num_val_iters):
-    print(':: RANSAC registration on downsampled point clouds.')
-    print('   Distance threshold %.3f.' % distance_threshold)
-    result = o3d.registration.registration_ransac_based_on_feature_matching(
-        source_down, target_down, source_fpfh, target_fpfh, distance_threshold,
-        o3d.registration.TransformationEstimationPointToPoint(False), 4, [
-            o3d.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
-            o3d.registration.CorrespondenceCheckerBasedOnDistance(
-                distance_threshold)
-        ], o3d.registration.RANSACConvergenceCriteria(num_iters, num_val_iters))
-    return result
-
-
 def remove_ground_plane(pcd, z_thresh=-2.7):
     cropped = copy.deepcopy(pcd)
     cropped_points = np.array(cropped.points)
@@ -39,18 +24,18 @@ def compute_features(pcd, voxel_size, normals_nn=100, features_nn=120, downsampl
     # Downsample the point cloud using Voxel grids 
     if downsample:
         print(':: Input size:', np.array(pcd.points).shape)
-        print(':: Downsample with a voxel size %.3f.' % voxel_size)
-        pcd_down = pcd.voxel_down_sample(voxel_size)
-        print(':: Downsample size', np.array(pcd.points).shape)
+        pcd_down = utils.downsample_point_cloud(pcd, voxel_size)
+        print(':: Downsample with a voxel size %.3f' % voxel_size)
+        print(':: Downsample size', np.array(pcd_down.points).shape)
     else: pcd_down = copy.deepcopy(pcd)
 
     # Estimate normals  
-    print(':: Estimate normal with search radius %.3f.' % normals_radius)
+    print(':: Estimate normal with search radius %.3f' % normals_radius)
     pcd_down.estimate_normals(
         o3d.geometry.KDTreeSearchParamHybrid(radius=normals_radius, max_nn=normals_nn))
 
     # Compute FPFH features 
-    print(':: Compute FPFH feature with search radius %.3f.' % features_radius)
+    print(':: Compute FPFH feature with search radius %.3f' % features_radius)
     features = o3d.registration.compute_fpfh_feature(pcd_down,
         o3d.geometry.KDTreeSearchParamHybrid(radius=features_radius, max_nn=features_nn))
 
@@ -69,7 +54,7 @@ def match_features(pcd0, pcd1, feature0, feature1, thresh=None, display=False):
 
     scores, indices = [], []
     fpfh_tree = o3d.geometry.KDTreeFlann(feature1)
-    for i in range(len(pcd0.points)):
+    for i in tqdm(range(len(pcd0.points)), desc='Feature Matching'):
         [_, idx, _] = fpfh_tree.search_knn_vector_xd(feature0.data[:, i], 1)
         scores.append(np.linalg.norm(pcd0.points[i] - pcd1.points[idx[0]]))
         indices.append([i, idx[0]])
@@ -119,19 +104,74 @@ def estimate_scale(pcd0, pcd1, pcd0_idx, pcd1_idx, top_percent=1.0,
     return best_scale
 
 
+def global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size):
+    # distance_threshold=0.5, num_iters=1000, num_val_iters=1000):
+    print(':: Input size source:', np.array(source_down.points).shape)
+    print(':: Input size target:', np.array(target_down.points).shape)
+    print(':: Features size source:', np.array(source_fpfh.data).shape)
+    print(':: Features size target:', np.array(target_fpfh.data).shape)
+    
+    distance_threshold = voxel_size * 1.5
+    print(':: Distance threshold %.3f' % distance_threshold)
+    
+    result = o3d.registration.registration_ransac_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh, distance_threshold,
+        o3d.registration.TransformationEstimationPointToPoint(False), 4, [
+            o3d.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
+            o3d.registration.CorrespondenceCheckerBasedOnDistance(
+                distance_threshold)
+        ], o3d.registration.RANSACConvergenceCriteria(4000000, 500))
+    
+    print(result)
+    return result
+
+
+def fast_global_registration(source_down, target_down,
+    source_fpfh, target_fpfh, voxel_size):
+    distance_threshold = voxel_size * 0.5
+    result = o3d.registration.registration_fast_based_on_feature_matching(
+        source_down, target_down, source_fpfh, target_fpfh,
+        o3d.registration.FastGlobalRegistrationOption(
+            maximum_correspondence_distance=distance_threshold))
+    
+    print(result)
+    return result
+
+
+def pairwise_registration(source, target, voxel_size):
+    max_correspondence_distance_coarse = voxel_size * 15
+    max_correspondence_distance_fine = voxel_size * 1.5
+    print(':: Apply point-to-plane ICP')
+    
+    icp_coarse = o3d.registration.registration_icp(
+        source, target, max_correspondence_distance_coarse, np.identity(4),
+        o3d.registration.TransformationEstimationPointToPlane())
+    
+    icp_fine = o3d.registration.registration_icp(
+        source, target, max_correspondence_distance_fine,
+        icp_coarse.transformation,
+        o3d.registration.TransformationEstimationPointToPlane())
+    
+    transformation_icp = icp_fine.transformation
+    information_icp = o3d.registration.get_information_matrix_from_point_clouds(
+        source, target, max_correspondence_distance_fine,
+        icp_fine.transformation)
+    
+    print(transformation_icp)
+    # print(information_icp)
+    return transformation_icp, information_icp
+
+
 def run():
     voxel_size = 0.2
-    dso_scale = 0.05
+    dso_scale = 0.1
 
-    pcd_lidar = o3d.io.read_point_cloud('../maps/scans/scan_050.pcd')
+    pcd_lidar = o3d.io.read_point_cloud('../maps/scans/scan_000.pcd')
     pcd_lidar = remove_ground_plane(pcd_lidar)
 
-    pcd_dso = o3d.io.read_point_cloud('../maps/scans/scan_055.pcd')
+    pcd_dso = o3d.io.read_point_cloud('../maps/scans/scan_000.pcd')
     pcd_dso = remove_ground_plane(pcd_dso)
-    pcd_dso = utils.scale_point_cloud(pcd_dso, dso_scale) #.rotate([1, 2, 3])
-
-    # pcd_lidar = o3d.io.read_point_cloud('../data/cloud_bin_0.pcd')
-    # pcd_dso = o3d.io.read_point_cloud('../data/cloud_bin_1.pcd')
+    pcd_dso = utils.scale_point_cloud(pcd_dso, dso_scale).rotate([1, 2, 3])
 
     # utils.display(pcds=[pcd_lidar, pcd_dso], colors=[[0, 0, 1], [0, 1, 0]])
 
@@ -139,14 +179,33 @@ def run():
     pcd_lidar_down, features_lidar = compute_features(pcd_lidar, voxel_size=voxel_size)
 
     print('\nComputing FPFH features for DSO point cloud...')
-    pcd_dso_down, features_dso = compute_features(pcd_dso, voxel_size=voxel_size * (down_scale if down_scale < 1 else 1))
+    pcd_dso_down, features_dso = compute_features(pcd_dso, voxel_size=voxel_size * (dso_scale if dso_scale < 1 else 1))
 
     print('\nMatching FPFH features...')
     pcd_lidar_idx, pcd_dso_idx = match_features(pcd_lidar_down, pcd_dso_down,
         features_lidar, features_dso, thresh=None)
 
     print('\nEstimating scale using matches...')
-    estimate_scale(pcd_lidar_down, pcd_dso_down, pcd_lidar_idx, pcd_dso_idx)
+    scale = estimate_scale(pcd_lidar_down, pcd_dso_down, pcd_lidar_idx, pcd_dso_idx)
+
+    print('\nCorrecting scale...')
+    pcd_dso_scaled = utils.scale_point_cloud(pcd_dso, 1.0 / scale)
+    # utils.display(pcds=[pcd_lidar, pcd_dso_scaled], colors=[[0, 0, 1], [0, 1, 0]])
+    
+    # print('\nRANSAC global registration on scaled point clouds...')
+    # _, features_dso_scaled = compute_features(pcd_dso_scaled, voxel_size=voxel_size)
+    # global_registration(pcd_lidar_down, pcd_dso_scaled,
+    #     features_lidar, features_dso_scaled, voxel_size)
+    
+    print('\nFast global registration on scaled point clouds...')
+    _, features_dso_scaled = compute_features(pcd_dso_scaled, voxel_size=voxel_size)
+    fast_global_registration(pcd_lidar_down, pcd_dso_scaled,
+        features_lidar, features_dso_scaled, voxel_size)
+    
+    # print('\nPairwise ICP registration on scaled point clouds...')
+    # pcd_dso_scaled_down = utils.downsample_point_cloud(pcd_dso_scaled, voxel_size)
+    # pairwise_registration(pcd_dso_scaled_down, pcd_lidar_down, voxel_size)
+
 
 
 if __name__ == '__main__':

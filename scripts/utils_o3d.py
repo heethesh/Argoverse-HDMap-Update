@@ -27,3 +27,15 @@ def translate_point_cloud(pcd, translation):
     pcd_translated = copy.deepcopy(pcd)
     pcd_translated = pcd_translated.translate(translation)
     return pcd_translated
+
+
+def rotate_point_cloud(pcd, rotation):
+    pcd_rotated = copy.deepcopy(pcd)
+    pcd_rotated = pcd_rotated.rotate(rotation)
+    return pcd_rotated
+
+
+def downsample_point_cloud(pcd, voxel_size):
+    pcd_down = copy.deepcopy(pcd)
+    pcd_down = pcd_down.voxel_down_sample(voxel_size)
+    return pcd_down
